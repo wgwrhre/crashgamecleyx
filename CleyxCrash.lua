@@ -1,15 +1,15 @@
--- Roblox Client-Side Crash Utility
+-- Roblox Targeted Ejection Utility
 -- Signature: Made by cleyx
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Create GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "CrashUtility"
+ScreenGui.Name = "EjectUtility"
 ScreenGui.Parent = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 
 local Frame = Instance.new("Frame")
@@ -22,7 +22,7 @@ Frame.Parent = ScreenGui
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundTransparency = 1
-Title.Text = "Crash Utility"
+Title.Text = "Eject Utility"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
@@ -35,15 +35,15 @@ PlayerList.BackgroundTransparency = 1
 PlayerList.ScrollBarThickness = 4
 PlayerList.Parent = Frame
 
-local CrashButton = Instance.new("TextButton")
-CrashButton.Size = UDim2.new(1, -10, 0, 30)
-CrashButton.Position = UDim2.new(0, 5, 1, -35)
-CrashButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CrashButton.Text = "CRASH TARGET"
-CrashButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CrashButton.Font = Enum.Font.GothamBold
-CrashButton.TextSize = 14
-CrashButton.Parent = Frame
+local EjectButton = Instance.new("TextButton")
+EjectButton.Size = UDim2.new(1, -10, 0, 30)
+EjectButton.Position = UDim2.new(0, 5, 1, -35)
+EjectButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+EjectButton.Text = "EJECT TARGET"
+EjectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+EjectButton.Font = Enum.Font.GothamBold
+EjectButton.TextSize = 14
+EjectButton.Parent = Frame
 
 local Signature = Instance.new("TextLabel")
 Signature.Size = UDim2.new(1, 0, 0, 15)
@@ -79,8 +79,8 @@ local function UpdatePlayerList()
             
             Button.MouseButton1Click:Connect(function()
                 SelectedPlayer = player
-                CrashButton.Text = "CRASH: " .. player.Name
-                CrashButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+                EjectButton.Text = "EJECT: " .. player.Name
+                EjectButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
             end)
         end
     end
@@ -90,77 +90,77 @@ Players.PlayerAdded:Connect(UpdatePlayerList)
 Players.PlayerRemoving:Connect(UpdatePlayerList)
 UpdatePlayerList()
 
--- Crash methods
-local function CrashTarget(player)
+-- Ejection methods
+local function EjectTarget(player)
     if not player or not player.Character then return end
     
-    -- Method 1: Infinite property assignment (memory leak)
+    -- Method 1: Humanoid State Corruption
     spawn(function()
-        local targetChar = player.Character
-        if not targetChar then return end
+        local char = player.Character
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
         
-        for i = 1, 10000 do
-            local Part = Instance.new("Part")
-            Part.Parent = Workspace
-            Part.Anchored = true
-            Part.CanCollide = false
-            Part.Transparency = 1
-            Part.Position = targetChar.HumanoidRootPart.Position + Vector3.new(math.random(-100, 100), math.random(-100, 100), math.random(-100, 100))
-            
-            -- Create massive table attachment
-            local Data = {}
-            for j = 1, 1000 do
-                table.insert(Data, string.rep("A", 1000))
-            end
-            Part:SetAttribute("CrashData", Data)
-            
-            wait()
-        end
-    end)
-    
-    -- Method 2: Remote event spam (if accessible)
-    spawn(function()
-        for i = 1, 5000 do
+        -- Force invalid state transitions
+        for i = 1, 50 do
             pcall(function()
-                local Remote = Instance.new("RemoteEvent")
-                Remote.Name = "Crash_" .. tostring(i)
-                Remote.Parent = player
-                Remote:FireServer(string.rep("B", 10000))
+                humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+                wait(0.01)
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                wait(0.01)
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                wait(0.01)
+                humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
             end)
-            wait()
+        end
+        
+        -- Destroy root part to trigger respawn loop
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root:Destroy()
         end
     end)
     
-    -- Method 3: Physics overload near target
+    -- Method 2: Character Parenting Loop
     spawn(function()
-        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if not root then return end
+        local char = player.Character
+        if not char then return end
         
-        for i = 1, 500 do
-            local Part = Instance.new("Part")
-            Part.Size = Vector3.new(0.1, 0.1, 0.1)
-            Part.Anchored = false
-            Part.CanCollide = true
-            Part.Position = root.Position + Vector3.new(math.random(-5, 5), math.random(-5, 5), math.random(-5, 5))
-            Part.Parent = Workspace
-            
-            local Velocity = Instance.new("BodyVelocity")
-            Velocity.Velocity = Vector3.new(math.random(-1000, 1000), math.random(-1000, 1000), math.random(-1000, 1000))
-            Velocity.MaxForce = Vector3.new(1000000, 1000000, 1000000)
-            Velocity.Parent = Part
-            
+        for i = 1, 100 do
+            pcall(function()
+                char.Parent = nil
+                wait()
+                char.Parent = Workspace
+            end)
+        end
+    end)
+    
+    -- Method 3: Animation Track Spam
+    spawn(function()
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+        
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if not animator then return end
+        
+        for i = 1, 200 do
+            pcall(function()
+                local track = animator:LoadAnimation(Instance.new("Animation"))
+                track:Play()
+                track:Stop()
+                track:Destroy()
+            end)
             wait()
         end
     end)
 end
 
-CrashButton.MouseButton1Click:Connect(function()
+EjectButton.MouseButton1Click:Connect(function()
     if SelectedPlayer then
-        CrashButton.Text = "CRASHING..."
-        CrashButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-        CrashTarget(SelectedPlayer)
+        EjectButton.Text = "EJECTING..."
+        EjectButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        EjectTarget(SelectedPlayer)
         wait(2)
-        CrashButton.Text = "CRASH: " .. SelectedPlayer.Name
-        CrashButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        EjectButton.Text = "EJECT: " .. SelectedPlayer.Name
+        EjectButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
     end
 end)
